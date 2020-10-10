@@ -19,6 +19,7 @@ namespace DropBoxAPI
         string RedirectUri = "http://127.0.0.1:52475/authorize";
         DropboxClient client;
         ListFolderResult content;
+        string Path = "";
 
         enum Units { байт, КБ, МБ, ГБ}
 
@@ -93,14 +94,24 @@ namespace DropBoxAPI
             statusStrip1.Items[6].Click += ShowInfo;
             statusStrip1.Items[7].Click += ShowInfo;
 
-            content = client.Files.ListFolderAsync("").Result;
+            // Show root
+            ShowFolderContent(Path);
+
+            label_loading.Hide();
+        }
+
+        private void ShowFolderContent(string path)
+        {
+            listView1.Clear();
+            Path = path;
+            menuTextBox.Text = Path;
+            content = client.Files.ListFolderAsync(path).Result;
             foreach (var item in content.Entries)
             {
+                // If folder - item.SubItems[1].Text (size) == ""
                 listView1.Items.Add(new ListViewItem(new string[] { item.Name, item.AsFile?.Size.ToString() }, item.IsFolder ? 0 : 1));
             }
             statusStrip1.Items["itemsCount"].Text = listView1.Items.Count.ToString();
-
-            label_loading.Hide();
         }
 
         void ShowInfo(object sender, EventArgs e)
@@ -196,8 +207,12 @@ namespace DropBoxAPI
                     } break;
                 case 1:
                     {
-
-                    }
+                        /*var createFolder = new ToolStripButton("Создать папку");
+                        createFolder.Click += CreateFolder_Click;
+                        var uploadFile = new ToolStripButton("Загрузить файл");
+                        uploadFile.Click += UploadFile_Click;
+                        contextMenuStrip.Items.AddRange(new[] { createFolder, uploadFile });*/
+                    } break;
                 default:
                     break;
             }
@@ -211,6 +226,20 @@ namespace DropBoxAPI
         private void CreateFolder_Click(object sender, EventArgs e)
         {
             throw new NotImplementedException();
+        }
+
+        private void listView1_DoubleClick(object sender, EventArgs e)
+        {
+            if(listView1.SelectedItems.Count == 1)
+            {
+                var item = listView1.SelectedItems[0];
+
+                // folder
+                if(item.SubItems[1].Text == "")
+                {
+                    ShowFolderContent(Path + "/" + item.Text);
+                }
+            }
         }
     }
 }
