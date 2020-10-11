@@ -43,8 +43,8 @@
             this.listView1 = new System.Windows.Forms.ListView();
             this.contextMenuStrip = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.imageList1 = new System.Windows.Forms.ImageList(this.components);
-            this.w = new System.Windows.Forms.WebBrowser();
             this.label_loading = new System.Windows.Forms.Label();
+            this.w = new CefSharp.WinForms.ChromiumWebBrowser();
             this.statusStrip1.SuspendLayout();
             this.toolStrip1.SuspendLayout();
             this.SuspendLayout();
@@ -147,19 +147,23 @@
             this.listView1.ContextMenuStrip = this.contextMenuStrip;
             this.listView1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.listView1.HideSelection = false;
+            this.listView1.LabelEdit = true;
             this.listView1.LargeImageList = this.imageList1;
             this.listView1.Location = new System.Drawing.Point(0, 25);
             this.listView1.Name = "listView1";
             this.listView1.Size = new System.Drawing.Size(942, 565);
             this.listView1.TabIndex = 3;
             this.listView1.UseCompatibleStateImageBehavior = false;
+            this.listView1.AfterLabelEdit += new System.Windows.Forms.LabelEditEventHandler(this.listView1_AfterLabelEdit);
             this.listView1.SelectedIndexChanged += new System.EventHandler(this.listView1_SelectedIndexChanged);
             this.listView1.DoubleClick += new System.EventHandler(this.listView1_DoubleClick);
             // 
             // contextMenuStrip
             // 
             this.contextMenuStrip.Name = "contextMenuStrip";
-            this.contextMenuStrip.Size = new System.Drawing.Size(61, 4);
+            this.contextMenuStrip.ShowImageMargin = false;
+            this.contextMenuStrip.ShowItemToolTips = false;
+            this.contextMenuStrip.Size = new System.Drawing.Size(36, 4);
             this.contextMenuStrip.Opening += new System.ComponentModel.CancelEventHandler(this.contextMenuStrip_Opening);
             // 
             // imageList1
@@ -170,19 +174,6 @@
             this.imageList1.Images.SetKeyName(1, "notepad.png");
             this.imageList1.Images.SetKeyName(2, "folder_cut.png");
             this.imageList1.Images.SetKeyName(3, "notepad_cut.png");
-            // 
-            // w
-            // 
-            this.w.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.w.IsWebBrowserContextMenuEnabled = false;
-            this.w.Location = new System.Drawing.Point(0, 25);
-            this.w.MinimumSize = new System.Drawing.Size(20, 20);
-            this.w.Name = "w";
-            this.w.ScriptErrorsSuppressed = true;
-            this.w.Size = new System.Drawing.Size(942, 565);
-            this.w.TabIndex = 4;
-            this.w.Visible = false;
-            this.w.Navigated += new System.Windows.Forms.WebBrowserNavigatedEventHandler(this.webBrowser1_Navigated);
             // 
             // label_loading
             // 
@@ -195,19 +186,28 @@
             this.label_loading.Text = "Loading...";
             this.label_loading.Visible = false;
             // 
+            // w
+            // 
+            this.w.ActivateBrowserOnCreation = false;
+            this.w.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.w.Location = new System.Drawing.Point(0, 25);
+            this.w.Name = "w";
+            this.w.Size = new System.Drawing.Size(942, 565);
+            this.w.TabIndex = 6;
+            this.w.Visible = false;
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(942, 612);
-            this.Controls.Add(this.label_loading);
             this.Controls.Add(this.w);
+            this.Controls.Add(this.label_loading);
             this.Controls.Add(this.listView1);
             this.Controls.Add(this.toolStrip1);
             this.Controls.Add(this.statusStrip1);
             this.Name = "Form1";
             this.Text = "Dropbox";
-            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.Form1_FormClosing);
             this.statusStrip1.ResumeLayout(false);
             this.statusStrip1.PerformLayout();
             this.toolStrip1.ResumeLayout(false);
@@ -229,10 +229,10 @@
         private ToolStripSpringTextBox menuTextBox;
         private System.Windows.Forms.ToolStripButton menuButton_refresh;
         private System.Windows.Forms.ListView listView1;
-        private System.Windows.Forms.WebBrowser w;
         private System.Windows.Forms.Label label_loading;
         private System.Windows.Forms.ImageList imageList1;
         private System.Windows.Forms.ContextMenuStrip contextMenuStrip;
+        private CefSharp.WinForms.ChromiumWebBrowser w;
     }
 }
 

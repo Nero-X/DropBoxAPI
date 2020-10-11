@@ -10,6 +10,8 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Dropbox.Api;
 using Dropbox.Api.Files;
+using CefSharp.WinForms;
+using System.IO;
 
 namespace DropBoxAPI
 {
@@ -19,7 +21,11 @@ namespace DropBoxAPI
         string RedirectUri = "http://127.0.0.1:52475/authorize";
         DropboxClient client;
         ListFolderResult content;
-        string Path = "";
+        string currentPath = "";
+        string lastPath = "";
+        KeyValuePair<string, string> buffer;
+        bool copy;
+        
 
         enum Units { байт, КБ, МБ, ГБ}
 
@@ -40,21 +46,23 @@ namespace DropBoxAPI
         {
             oauth2State = Guid.NewGuid().ToString("N");
             w.Show();
-            w.Navigate(DropboxOAuth2Helper.GetAuthorizeUri(OAuthResponseType.Token, "hzw1k2rtk9p5qcj", RedirectUri, state: oauth2State));
+            w.Load(DropboxOAuth2Helper.GetAuthorizeUri(OAuthResponseType.Token, "hzw1k2rtk9p5qcj", RedirectUri, state: oauth2State).ToString());
+            w.LoadError += W_LoadError;
         }
 
-        private void webBrowser1_Navigated(object sender, WebBrowserNavigatedEventArgs e)
+        private void W_LoadError(object sender, CefSharp.LoadErrorEventArgs e)
         {
-            if (e.Url.ToString().StartsWith(RedirectUri, StringComparison.InvariantCultureIgnoreCase))
+            if (e.FailedUrl.StartsWith(RedirectUri, StringComparison.InvariantCultureIgnoreCase))
             {
                 try
                 {
-                    OAuth2Response result = DropboxOAuth2Helper.ParseTokenFragment(e.Url);
+                    OAuth2Response result = DropboxOAuth2Helper.ParseTokenFragment(new Uri(e.FailedUrl));
                     if (result.State == oauth2State)
                     {
-                        w.Hide();
+                        w.Invoke((MethodInvoker)(() => w.Hide()));
                         Properties.Settings.Default.AccessToken = result.AccessToken;
-                        InitClient(result.AccessToken);
+                        Properties.Settings.Default.Save();
+                        Invoke((MethodInvoker)(() => InitClient(result.AccessToken)));
                     }
                 }
                 catch (ArgumentException)
@@ -68,7 +76,6 @@ namespace DropBoxAPI
         {
             client = new DropboxClient(accessToken);
             var info = client.Users.GetCurrentAccountAsync().Result;
-            label_loading.Show();
 
             var spaceUsage = new ToolStripProgressBar();
             var max = client.Users.GetSpaceUsageAsync().Result.Allocation.AsIndividual.Value.Allocated;
@@ -95,16 +102,15 @@ namespace DropBoxAPI
             statusStrip1.Items[7].Click += ShowInfo;
 
             // Show root
-            ShowFolderContent(Path);
-
-            label_loading.Hide();
+            ShowContent();
         }
 
-        private void ShowFolderContent(string path)
+        private void ShowContent(string path = "")
         {
+            label_loading.Show();
             listView1.Clear();
-            Path = path;
-            menuTextBox.Text = Path;
+            currentPath = path;
+            menuTextBox.Text = currentPath;
             content = client.Files.ListFolderAsync(path).Result;
             foreach (var item in content.Entries)
             {
@@ -112,6 +118,20 @@ namespace DropBoxAPI
                 listView1.Items.Add(new ListViewItem(new string[] { item.Name, item.AsFile?.Size.ToString() }, item.IsFolder ? 0 : 1));
             }
             statusStrip1.Items["itemsCount"].Text = listView1.Items.Count.ToString();
+            label_loading.Hide();
+        }
+
+        private void ShowContent(IList<SearchMatchV2> content)
+        {
+            label_loading.Show();
+            listView1.Clear();
+            foreach (var item in content)
+            {
+                var meta = item.Metadata.AsMetadata.Value;
+                listView1.Items.Add(new ListViewItem(new string[] { meta.Name, meta.AsFile?.Size.ToString() }, meta.IsFolder ? 0 : 1));
+            }
+            statusStrip1.Items["itemsCount"].Text = listView1.Items.Count.ToString();
+            label_loading.Hide();
         }
 
         void ShowInfo(object sender, EventArgs e)
@@ -168,37 +188,44 @@ namespace DropBoxAPI
             return sizeInBytes.ToString() + " " + i;
         }
 
-        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            Properties.Settings.Default.Save();
-        }
-
         private void menuButton_l_Click(object sender, EventArgs e)
         {
-
+            lastPath = currentPath;
+            ShowContent(string.Concat(currentPath.Take(currentPath.LastIndexOf('/'))));
         }
 
         private void menuButton_r_Click(object sender, EventArgs e)
         {
-
+            ShowContent(lastPath);
         }
 
         private void menuButton_s_Click(object sender, EventArgs e)
         {
-
+            if(menuTextBox.Text != "")
+            {
+                var searchRes = client.Files.SearchV2Async(menuTextBox.Text).Result;
+                ShowContent(searchRes.Matches);
+            }
         }
 
         private void menuButton_refresh_Click(object sender, EventArgs e)
         {
-
+            ShowContent(currentPath);
         }
 
         private void contextMenuStrip_Opening(object sender, CancelEventArgs e)
         {
+            contextMenuStrip.Items.Clear();
             switch (listView1.SelectedItems.Count)
             {
                 case 0:
                     {
+                        if(buffer.Key != null)
+                        {
+                            var paste = new ToolStripButton("Вставить");
+                            paste.Click += Paste_Click;
+                            contextMenuStrip.Items.Add(paste);
+                        }
                         var createFolder = new ToolStripButton("Создать папку");
                         createFolder.Click += CreateFolder_Click;
                         var uploadFile = new ToolStripButton("Загрузить файл");
@@ -207,25 +234,104 @@ namespace DropBoxAPI
                     } break;
                 case 1:
                     {
-                        /*var createFolder = new ToolStripButton("Создать папку");
-                        createFolder.Click += CreateFolder_Click;
-                        var uploadFile = new ToolStripButton("Загрузить файл");
-                        uploadFile.Click += UploadFile_Click;
-                        contextMenuStrip.Items.AddRange(new[] { createFolder, uploadFile });*/
+                        var cut = new ToolStripButton("Вырезать");
+                        cut.Click += Cut_Click;
+                        var copy = new ToolStripButton("Копировать");
+                        copy.Click += Copy_Click;
+                        var delete = new ToolStripButton("Удалить");
+                        delete.Click += Delete_Click;
+                        var info = new ToolStripButton("Свойства");
+                        info.Click += Info_Click;
+                        var share = new ToolStripButton("Поделиться");
+                        share.Click += Share_Click;
+                        var rename = new ToolStripButton("Переименовать");
+                        rename.Click += Rename_Click;
+                        var download = new ToolStripButton("Скачать");
+                        download.Click += Download_Click;
+                        contextMenuStrip.Items.AddRange(new[] { share, download, cut, copy, delete, rename, info });
                     } break;
-                default:
-                    break;
             }
+            contextMenuStrip.Width++; // small width fix
+        }
+
+        private void Rename_Click(object sender, EventArgs e)
+        {
+            listView1.SelectedItems[0].BeginEdit();
+        }
+
+        private void Share_Click(object sender, EventArgs e)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void Info_Click(object sender, EventArgs e)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void Copy_Click(object sender, EventArgs e)
+        {
+            buffer = new KeyValuePair<string, string>(currentPath, listView1.SelectedItems[0].Text);
+            copy = true;
+        }
+
+        private void Download_Click(object sender, EventArgs e)
+        {
+            var item = listView1.SelectedItems[0];
+            var saveDialog = new SaveFileDialog();
+            saveDialog.FileName = item.Text;
+            if (!item.Text.Contains('.')) saveDialog.FileName += ".zip";
+            if(saveDialog.ShowDialog() == DialogResult.OK)
+            {
+                if (item.SubItems[1].Text == "")
+                {
+                    var res = client.Files.DownloadZipAsync(currentPath + "/" + item.Text).Result;
+                    File.WriteAllBytes(saveDialog.FileName, res.GetContentAsByteArrayAsync().Result);
+                }
+                else
+                {
+                    var res = client.Files.DownloadAsync(currentPath + "/" + item.Text).Result;
+                    File.WriteAllBytes(saveDialog.FileName, res.GetContentAsByteArrayAsync().Result);
+                }
+            }
+        }
+
+        private void Delete_Click(object sender, EventArgs e)
+        {
+            var item = listView1.SelectedItems[0];
+            client.Files.DeleteV2Async(currentPath + "/" + item.Text);
+            listView1.Items.Remove(item);
+        }
+
+        private void Cut_Click(object sender, EventArgs e)
+        {
+            var item = listView1.SelectedItems[0];
+            buffer = new KeyValuePair<string, string>(currentPath, item.Text);
+            copy = false;
+            item.ImageIndex += 2;
+        }
+
+        private void Paste_Click(object sender, EventArgs e)
+        {
+            if (copy) client.Files.CopyV2Async(buffer.Key + "/" + buffer.Value, currentPath + "/" + buffer.Value);
+            else client.Files.MoveV2Async(buffer.Key + "/" + buffer.Value, currentPath + "/" + buffer.Value);
+            buffer = new KeyValuePair<string, string>();
         }
 
         private void UploadFile_Click(object sender, EventArgs e)
         {
-            throw new NotImplementedException();
+            var openDialog = new OpenFileDialog();
+            if(openDialog.ShowDialog() == DialogResult.OK)
+            {
+                client.Files.UploadAsync(currentPath + "/" + openDialog.SafeFileName, WriteMode.Overwrite.Instance, body: File.OpenRead(openDialog.FileName));
+            }
         }
 
         private void CreateFolder_Click(object sender, EventArgs e)
         {
-            throw new NotImplementedException();
+            var res = client.Files.CreateFolderV2Async(currentPath + "/New folder", true).Result;
+            var item = listView1.Items.Add(new ListViewItem(new string[] { res.Metadata.Name, "" }, 0));
+            item.BeginEdit();
         }
 
         private void listView1_DoubleClick(object sender, EventArgs e)
@@ -237,8 +343,21 @@ namespace DropBoxAPI
                 // folder
                 if(item.SubItems[1].Text == "")
                 {
-                    ShowFolderContent(Path + "/" + item.Text);
+                    ShowContent(currentPath + "/" + item.Text);
                 }
+            }
+        }
+
+        private void listView1_AfterLabelEdit(object sender, LabelEditEventArgs e)
+        {
+            try
+            {
+                client.Files.MoveV2Async(currentPath + "/" + listView1.Items[e.Item].Text, currentPath + "/" + e.Label);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Error");
+                e.CancelEdit = true;
             }
         }
     }
