@@ -1,17 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Data;
 using System.Drawing;
 using System.Linq;
 using System.Net;
 using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 using Dropbox.Api;
 using Dropbox.Api.Files;
-using CefSharp.WinForms;
 using System.IO;
+using Dropbox.Api.Sharing;
 
 namespace DropBoxAPI
 {
@@ -25,7 +23,6 @@ namespace DropBoxAPI
         string lastPath = "";
         KeyValuePair<string, string> buffer;
         bool copy;
-        
 
         enum Units { байт, КБ, МБ, ГБ}
 
@@ -94,15 +91,23 @@ namespace DropBoxAPI
             using (WebClient web = new WebClient())
                 statusStrip1.Items.Add(new Bitmap(web.OpenRead(info.ProfilePhotoUrl))); // user icon
             statusStrip1.Items.Add(new ToolStripSeparator());
-            for (int i = 3; i < 9; i++)
+            statusStrip1.Items.Add("Файлы с доступом по ссылке");
+
+            for (int i = 3; i < 10; i++)
             {
                 statusStrip1.Items[i].Alignment = ToolStripItemAlignment.Right;
             }
             statusStrip1.Items[6].Click += ShowInfo;
             statusStrip1.Items[7].Click += ShowInfo;
+            statusStrip1.Items[9].Click += Shared_Click;
 
             // Show root
             ShowContent();
+        }
+
+        private void Shared_Click(object sender, EventArgs e)
+        {
+            ShowContent(client.Sharing.ListSharedLinksAsync().Result.Links);
         }
 
         private void ShowContent(string path = "")
@@ -134,17 +139,29 @@ namespace DropBoxAPI
             label_loading.Hide();
         }
 
+        private void ShowContent(IList<SharedLinkMetadata> links)
+        {
+            label_loading.Show();
+            listView1.Clear();
+            foreach (var link in links)
+            {
+                listView1.Items.Add(new ListViewItem(new string[] { link.Name, link.AsFile?.Size.ToString() }, link.IsFolder ? 0 : 1));
+            }
+            statusStrip1.Items["itemsCount"].Text = listView1.Items.Count.ToString();
+            label_loading.Hide();
+        }
+
         void ShowInfo(object sender, EventArgs e)
         {
             var full = client.Users.GetCurrentAccountAsync().Result;
             StringBuilder str = new StringBuilder();
-            str.AppendFormat("Account id    : {0}\n", full.AccountId);
-            str.AppendFormat("Country       : {0}\n", full.Country);
-            str.AppendFormat("Email         : {0}\n", full.Email);
-            str.AppendFormat("Is paired     : {0}\n", full.IsPaired ? "Yes" : "No");
-            str.AppendFormat("Locale        : {0}\n", full.Locale);
-            str.AppendFormat("Display Name  : {0}\n", full.Name.DisplayName);
-            str.AppendFormat("Referral link : {0}\n", full.ReferralLink);
+            str.AppendFormat("Account id: {0}\n", full.AccountId);
+            str.AppendFormat("Country: {0}\n", full.Country);
+            str.AppendFormat("Email: {0}\n", full.Email);
+            str.AppendFormat("Is paired: {0}\n", full.IsPaired ? "Yes" : "No");
+            str.AppendFormat("Locale: {0}\n", full.Locale);
+            str.AppendFormat("Display Name: {0}\n", full.Name.DisplayName);
+            str.AppendFormat("Referral link: {0}\n", full.ReferralLink);
             MessageBox.Show(str.ToString(), "Информация о пользователе");
         }
 
@@ -261,12 +278,36 @@ namespace DropBoxAPI
 
         private void Share_Click(object sender, EventArgs e)
         {
-            throw new NotImplementedException();
+            var item = listView1.SelectedItems[0];
+            var res = client.Sharing.CreateSharedLinkAsync(currentPath + "/" + item.Text).Result;
+            Clipboard.SetText(res.Url);
+            MessageBox.Show(res.Url + "\n\nСсылка скопирована в буфер обмена", "Поделиться");
         }
 
         private void Info_Click(object sender, EventArgs e)
         {
-            throw new NotImplementedException();
+            var item = listView1.SelectedItems[0];
+            var info = client.Files.GetMetadataAsync(currentPath + "/" + item.Text).Result;
+            StringBuilder str = new StringBuilder();
+            if (info.IsFolder)
+            {
+                var folder = info.AsFolder;
+                str.AppendFormat("Type: folder\n");
+                str.AppendFormat("Id: {0}\n", folder.Id);
+                str.AppendFormat("Name: {0}\n", folder.Name);
+                str.AppendFormat("Shared folder Id: {0}\n", folder.SharingInfo?.SharedFolderId ?? "null");
+            }
+            else
+            {
+                var file = info.AsFile;
+                str.AppendFormat("Type: file\n");
+                str.AppendFormat("Id: {0}\n", file.Id);
+                str.AppendFormat("Name: {0}\n", file.Name);
+                str.AppendFormat("Last modified: {0}\n", file.ServerModified);
+                str.AppendFormat("Size: {0}\n", SizeToStr(file.Size));
+                str.AppendFormat("Hash: {0}\n", file.ContentHash);
+            }
+            MessageBox.Show(str.ToString(), "Информация");
         }
 
         private void Copy_Click(object sender, EventArgs e)
@@ -285,11 +326,13 @@ namespace DropBoxAPI
             {
                 if (item.SubItems[1].Text == "")
                 {
+                    // folder
                     var res = client.Files.DownloadZipAsync(currentPath + "/" + item.Text).Result;
                     File.WriteAllBytes(saveDialog.FileName, res.GetContentAsByteArrayAsync().Result);
                 }
                 else
                 {
+                    // file
                     var res = client.Files.DownloadAsync(currentPath + "/" + item.Text).Result;
                     File.WriteAllBytes(saveDialog.FileName, res.GetContentAsByteArrayAsync().Result);
                 }
